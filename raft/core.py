@@ -14,12 +14,17 @@ class CoreRaft:
         min_timeout = .150 
         max_timeout = .300
         self.raft_timer = RaftTimer(self.on_election_timeout, min_timeout, max_timeout)
+        self.heartbeat_timer = RaftTimer()
         self.storage = FileStorage(database_path)
         self.node_id = node_id 
         self.peers = peers
         self.status = Status.follower
         self.term, self.voted_for = self.storage.load_metadata()
+
         self.outgoing_messages = asyncio.Queue()
+        self.inbound_messages = asyncio.Queue()
+
+        self.votes = set()
         
         self.commit_index = 0 
         self.last_applied = 0
@@ -28,7 +33,7 @@ class CoreRaft:
         self.match_index = {}
 
     async def on_election_timeout(self):
-        self.votes = {self.node_id}
+        self.votes.clear()
         self.term += 1 
         self.voted_for = self.node_id  
         self.storage.save_metadata(self.term, self.voted_for)    
@@ -40,23 +45,44 @@ class CoreRaft:
 
         await self.request_vote(last_log_index, last_log_term) 
 
-    # request vote rpc ? 
+    # Helper functions 
+    def _validate_term(self, incoming_term): 
+        if incoming_term > self.term: 
+            self.term = incoming_term 
+            self.voted_for = None 
+            self.storage.save_metadata(self.term, self.voted_for) 
+
+            if self.status != Status.follower: 
+                self.status = Status.follower
+                self.raft_timer.reset()
+            return True 
+        return False
+
+    # request vote rpc 
     async def request_vote(self, last_log_index, last_log_term): 
         for peer in self.peers: 
             request_vote_message = message.RequestVoteMessage(self.term, self.node_id, last_log_index, last_log_term) 
             await self.outgoing_messages.put((peer, request_vote_message)) 
 
-    # append entries rpc ? 
+    # append entries rpc 
     async def append_entries(self, log_entries):
         for peer in self.peers: 
-            append_entries_message = message.AppendEntriesMessage(self.term, self.node_id, self.storage.last_index(), self.storage.last_termªº, self.commit_index, log_entries)
+            append_entries_message = message.AppendEntriesMessage(self.term, self.node_id, self.storage.last_index(), self.storage.last_term(), self.commit_index, log_entries)
             await self.outgoing_messages.put((peer, append_entries_message))
 
-    # handling response from request vote rpc 
+    # handle response to request vote rpc 
+    def request_vote_response(self): 
+        pass 
+
+    # handle response to append entry rpc 
+    def append_entries_response(self): 
+        pass
+
+    # handle incoming request vote rpc
     def handle_request_vote(self):
         pass 
 
-    # handling response from append entries rpc
+    # handle incoming append entry rpc
     def handle_append_entries(self): 
         pass
 
