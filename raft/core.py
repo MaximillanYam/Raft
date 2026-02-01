@@ -4,6 +4,9 @@ from enum import Enum
 import asyncio
 import message
 
+class CoreFailure(Exception): 
+    pass
+
 class Status(Enum):
     follower = "follower"
     candidate = "candidate" 
@@ -66,16 +69,27 @@ class CoreRaft:
 
     # append entries rpc 
     async def append_entries(self, log_entries):
-        for peer in self.peers: 
-            append_entries_message = message.AppendEntriesMessage(self.term, self.node_id, self.storage.last_index(), self.storage.last_term(), self.commit_index, log_entries)
-            await self.outgoing_messages.put((peer, append_entries_message))
+        if self.status == Status.leader: 
+            for peer in self.peers: 
+                prev_log_index = self.next_index[peer] - 1 
+
+                if prev_log_index == 0: 
+                    prev_log_term = 0 
+                else: 
+                    entry = self.storage.get_entry(prev_log_index) 
+                    if entry is None: 
+                        raise CoreFailure(f'prev_log_index {prev_log_index} beyond our log')
+                    prev_log_term = entry.term
+
+                append_entries_message = message.AppendEntriesMessage(self.term, self.node_id, prev_log_index, prev_log_term, self.commit_index, log_entries)
+                await self.outgoing_messages.put((peer, append_entries_message))
 
     # handle response to request vote rpc 
-    def request_vote_response(self): 
+    def handle_request_vote_response(self): 
         pass 
 
     # handle response to append entry rpc 
-    def append_entries_response(self): 
+    def handle_append_entries_response(self): 
         pass
 
     # handle incoming request vote rpc
