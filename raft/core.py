@@ -39,6 +39,7 @@ class CoreRaft:
     # Timer call backs
     async def on_election_timeout(self):
         self.votes.clear()
+        self.votes.add(self.node_id)
         self.term += 1 
         self.voted_for = self.node_id  
         self.storage.save_metadata(self.term, self.voted_for)    
@@ -55,7 +56,7 @@ class CoreRaft:
             await self.append_entries([])
 
     # Helper functions 
-    def validate_term(self, incoming_term): 
+    def valid_term(self, incoming_term): 
         if incoming_term > self.term: 
             self.term = incoming_term 
             self.voted_for = None 
@@ -63,7 +64,7 @@ class CoreRaft:
 
             if self.status != Status.follower: 
                 self.status = Status.follower
-                self.raft_timer.reset()
+                self.raft_timer.reset() 
             return True 
         return False
     
@@ -95,18 +96,30 @@ class CoreRaft:
     
     # handle incoming request vote rpc
     def handle_request_vote(self, incoming_request_vote_message):
-        pass
+        self.validate_term(incoming_request_vote_message.term)
+        
+        if incoming_request_vote_message.term >= self.term:
+            node_last_log_index = self.storage.last_index()
+            node_last_log_term = self.storage.last_term()
+            if self.voted_for is None or self.voted_for == incoming_request_vote_message.candidate_id: 
+                if (incoming_request_vote_message.last_log_term > node_last_log_term) or (incoming_request_vote_message.last_log_term == node_last_log_term and incoming_request_vote_message.last_log_index >= node_last_log_index):
+                    self.voted_for = incoming_request_vote_message.candidate_id
+                    self.storage.save_metadata(self.term, self.voted_for) 
+                    self.raft_timer.reset()
+                    return message.RequestVoteResponse(self.term, True) 
+        
+        return message.RequestVoteResponse(self.term, False)
 
     # handle incoming append entry rpc
-    def handle_append_entries(self): 
+    def handle_append_entries(self, incoming_append_entries_message): 
         pass
 
     # handle response to request vote rpc 
-    def handle_request_vote_response(self): 
+    def handle_request_vote_response(self, incoming_request_vote_response): 
         pass 
 
     # handle response to append entry rpc 
-    def handle_append_entries_response(self): 
+    def handle_append_entries_response(self, incoming_append_entries_response): 
         pass
 
     
